@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Defensor do Servidor - Express Anti-DDoS</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts Google -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Orbitron:wght@500;700;900&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #090d16;
+            color: #e2e8f0;
+            user-select: none;
+            overflow-x: hidden;
+        }
+        .font-code { font-family: 'Fira Code', monospace; }
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+
+        /* Police Emergency Lights Flash */
+        @keyframes police-flash {
+            0%, 100% { box-shadow: 0 0 25px rgba(239, 68, 68, 0.7), inset 0 0 15px rgba(239, 68, 68, 0.3); }
+            50% { box-shadow: 0 0 25px rgba(59, 130, 246, 0.7), inset 0 0 15px rgba(59, 130, 246, 0.3); }
+        }
+        .police-alert {
+            animation: police-flash 0.8s infinite alternate;
+            border-color: #ef4444 !important;
+        }
+
+        /* Neon & Glow Effects */
+        .glow-cyan { text-shadow: 0 0 10px rgba(6, 182, 212, 0.7); }
+        .glow-green { text-shadow: 0 0 10px rgba(34, 197, 94, 0.7); }
+        .glow-red { text-shadow: 0 0 10px rgba(239, 68, 68, 0.7); }
+        
+        .box-glow { box-shadow: 0 0 15px rgba(6, 182, 212, 0.25); }
+        .box-glow-danger { box-shadow: 0 0 20px rgba(239, 68, 68, 0.4); }
+
+        /* Custom Scrollbar for Terminal */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        /* Canvas Overlay Styles */
+        #gameCanvas {
+            background: linear-gradient(180deg, #050811 0%, #0c1222 100%);
+            border: 2px solid #1e293b;
+            border-radius: 12px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-2 md:p-4">
+
+    <!-- HEADER / MONITOR BAR -->
+    <header class="w-full max-w-7xl mx-auto mb-3 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-xl p-3 md:p-4 shadow-2xl">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            
+            <!-- Logo & Title -->
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-lg bg-blue-600/20 border border-blue-500/50 flex items-center justify-center text-blue-400 font-bold font-code text-xl shadow-lg">
+                    🛡️
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-widest bg-blue-600/30 text-blue-300 border border-blue-500/40 rounded-full font-code">Ciberpolícia • DICC</span>
+                        <span id="policeBadge" class="hidden text-xs text-red-400 animate-pulse font-bold font-code">🚨 ALERTA POLICIAL</span>
+                    </div>
+                    <h1 class="text-xl md:text-2xl font-black tracking-wide font-orbitron text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-400 to-indigo-400">
+                        DEFENSOR DO SERVIDOR
+                    </h1>
+                    <p class="text-xs text-slate-400 font-code">Unidade de Crimes Cibernéticos • localhost:3000</p>
+                </div>
+            </div>
+
+            <!-- Dashboard Counters -->
+            <div class="flex items-center gap-4 font-code text-sm">
+                <!-- Score -->
+                <div class="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg">
+                    <span class="text-slate-500 block text-[10px] uppercase">Pontuação</span>
+                    <span id="scoreText" class="text-cyan-400 font-bold text-lg glow-cyan">0</span>
+                </div>
+
+                <!-- High Score -->
+                <div class="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg">
+                    <span class="text-slate-500 block text-[10px] uppercase">Recorde</span>
+                    <span id="highScoreText" class="text-purple-400 font-bold text-lg">0</span>
+                </div>
+
+                <!-- CPU / RAM Load -->
+                <div class="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg min-w-[140px]">
+                    <div class="flex justify-between text-[10px] uppercase mb-1">
+                        <span class="text-slate-400">Carga da CPU</span>
+                        <span id="cpuValueText" class="text-emerald-400 font-bold">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <div id="cpuBar" class="bg-emerald-500 h-full w-0 transition-all duration-300"></div>
+                    </div>
+                </div>
+
+                <!-- RPS / Throughput -->
+                <div class="hidden sm:block bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg">
+                    <span class="text-slate-500 block text-[10px] uppercase">Vazão (RPS)</span>
+                    <span id="rpsText" class="text-amber-400 font-bold text-lg">0 req/s</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN GAME AREA -->
+    <main class="w-full max-w-7xl mx-auto flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+        
+        <!-- CANVAS CONTAINER (8 Columns on desktop) -->
+        <section class="lg:col-span-8 flex flex-col items-center w-full">
+            <div class="relative w-full aspect-[4/3] max-h-[580px] rounded-xl overflow-hidden box-glow">
+                
+                <!-- HTML5 Canvas -->
+                <canvas id="gameCanvas" class="w-full h-full block cursor-pointer"></canvas>
+
+                <!-- START / PAUSE OVERLAY -->
+                <div id="startOverlay" class="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-20">
+                    <div class="w-16 h-16 bg-cyan-500/10 border border-cyan-500/40 rounded-2xl flex items-center justify-center mb-4 text-cyan-400">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"></path></svg>
+                    </div>
+                    <h2 class="text-3xl font-bold font-orbitron text-white mb-2">PROTEJA PORT:3000</h2>
+                    <p class="text-slate-300 text-sm max-w-md mb-6 leading-relaxed">
+                        As requisições HTTP estão chegando ao servidor! Trate cada uma com a resposta correta do 
+                        <span class="text-emerald-400 font-code font-bold">Express</span> antes que estourem a pilha do Event Loop e travem a CPU.
+                    </p>
+                    
+                    <button id="startBtn" class="px-8 py-3.5 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-black rounded-xl font-orbitron tracking-wider text-base shadow-lg shadow-cyan-500/20 transform hover:scale-105 transition">
+                        INICIAR SERVIDOR (START)
+                    </button>
+                    
+                    <div class="mt-6 text-xs text-slate-500 font-code flex items-center gap-4">
+                        <span>💡 Teclas [1], [2], [3], [4] ativam os handlers</span>
+                        <span>•</span>
+                        <span>Clique no card ou no botão</span>
+                    </div>
+                </div>
+
+                <!-- GAME OVER OVERLAY -->
+                <div id="gameOverOverlay" class="hidden absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-30">
+                    <div class="w-16 h-16 bg-red-500/10 border border-red-500/40 rounded-2xl flex items-center justify-center mb-4 text-red-500 animate-pulse">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    </div>
+                    <h2 class="text-3xl font-bold font-orbitron text-red-500 mb-1">503 SERVICE UNAVAILABLE</h2>
+                    <p class="text-xs text-slate-400 font-code mb-4">CPU Overload 100% - Server Crashed!</p>
+                    
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 w-full max-w-sm mb-6 font-code text-left text-xs space-y-2">
+                        <div class="flex justify-between"><span class="text-slate-400">Pontuação Total:</span><span id="finalScore" class="text-cyan-400 font-bold">0</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Req. Processadas:</span><span id="finalProcessed" class="text-emerald-400 font-bold">0</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">DDoS Bloqueados:</span><span id="finalDdos" class="text-purple-400 font-bold">0</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Erros (500 Internal):</span><span id="finalErrors" class="text-red-400 font-bold">0</span></div>
+                    </div>
+
+                    <button id="restartBtn" class="px-8 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black rounded-xl font-orbitron tracking-wider text-sm shadow-lg transform hover:scale-105 transition">
+                        REINICIAR SERVIDOR (RESTART)
+                    </button>
+                </div>
+
+                <!-- VICTORY OVERLAY (DEFEATED BOSS) -->
+                <div id="victoryOverlay" class="hidden absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-40">
+                    <div class="w-20 h-20 bg-emerald-500/10 border-2 border-emerald-400/60 rounded-full flex items-center justify-center mb-4 text-emerald-400 animate-bounce shadow-lg shadow-emerald-500/20">
+                        <span class="text-4xl">👮‍♂️</span>
+                    </div>
+                    <h2 class="text-3xl md:text-4xl font-black font-orbitron text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-400 mb-1">
+                        AMEAÇA NEUTRALIZADA!
+                    </h2>
+                    <p class="text-xs text-emerald-400 font-code font-bold mb-4">DEPARTAMENTO DE CIBERPOLÍCIA • SERVIDOR SALVO</p>
+                    <p class="text-slate-300 text-xs max-w-md mb-6 leading-relaxed">
+                        O <span class="text-red-400 font-bold">Chefão Botnet DDoS</span> foi destruído com sucesso após receber as 4 respostas de defesa do Express! O tráfego de rede foi liberado com segurança.
+                    </p>
+                    
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 w-full max-w-sm mb-6 font-code text-left text-xs space-y-2 box-glow">
+                        <div class="flex justify-between"><span class="text-slate-400">Pontuação Final:</span><span id="victoryScore" class="text-cyan-400 font-bold text-sm">0</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Req. Processadas:</span><span id="victoryProcessed" class="text-emerald-400 font-bold">0</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Status do Servidor:</span><span class="text-emerald-400 font-bold">100% SEGURO</span></div>
+                    </div>
+
+                    <button id="victoryRestartBtn" class="px-8 py-3.5 bg-gradient-to-r from-emerald-400 to-cyan-500 hover:from-emerald-300 hover:to-cyan-400 text-slate-950 font-black rounded-xl font-orbitron tracking-wider text-sm shadow-xl transform hover:scale-105 transition">
+                        JOGAR NOVAMENTE (RESTART)
+                    </button>
+                </div>
+            </div>
+
+            <!-- ACTION TOOLBAR (CONTROLS) -->
+            <div class="w-full grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+                
+                <!-- Action 1: res.json() -->
+                <button data-action="json" class="action-btn flex flex-col items-center justify-center p-3 rounded-xl bg-slate-900 border border-emerald-500/30 hover:border-emerald-500 hover:bg-emerald-950/20 active:scale-95 transition group">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="px-1.5 py-0.5 text-[10px] font-bold font-code bg-emerald-500/20 text-emerald-400 rounded">1</span>
+                        <span class="text-xs font-bold font-code text-emerald-400">res.json()</span>
+                    </div>
+                    <span class="text-[10px] text-slate-400">Para APIs (JSON)</span>
+                </button>
+
+                <!-- Action 2: res.send() -->
+                <button data-action="send" class="action-btn flex flex-col items-center justify-center p-3 rounded-xl bg-slate-900 border border-cyan-500/30 hover:border-cyan-500 hover:bg-cyan-950/20 active:scale-95 transition group">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="px-1.5 py-0.5 text-[10px] font-bold font-code bg-cyan-500/20 text-cyan-400 rounded">2</span>
+                        <span class="text-xs font-bold font-code text-cyan-400">res.send()</span>
+                    </div>
+                    <span class="text-[10px] text-slate-400">Arquivos HTML/Texto</span>
+                </button>
+
+                <!-- Action 3: rateLimit() -->
+                <button data-action="rate_limit" class="action-btn flex flex-col items-center justify-center p-3 rounded-xl bg-slate-900 border border-purple-500/30 hover:border-purple-500 hover:bg-purple-950/20 active:scale-95 transition group">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="px-1.5 py-0.5 text-[10px] font-bold font-code bg-purple-500/20 text-purple-400 rounded">3</span>
+                        <span class="text-xs font-bold font-code text-purple-400">rateLimit() [429]</span>
+                    </div>
+                    <span class="text-[10px] text-slate-400">Bloquear DDoS Flood</span>
+                </button>
+
+                <!-- Action 4: res.status(404) -->
+                <button data-action="not_found" class="action-btn flex flex-col items-center justify-center p-3 rounded-xl bg-slate-900 border border-amber-500/30 hover:border-amber-500 hover:bg-amber-950/20 active:scale-95 transition group">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="px-1.5 py-0.5 text-[10px] font-bold font-code bg-amber-500/20 text-amber-400 rounded">4</span>
+                        <span class="text-xs font-bold font-code text-amber-400">res.status(404)</span>
+                    </div>
+                    <span class="text-[10px] text-slate-400">Rota Não Encontrada</span>
+                </button>
+
+            </div>
+        </section>
+
+        <!-- SIDEBAR: TERMINAL LOGS & GUIA PEDAGÓGICO (4 Columns on desktop) -->
+        <aside class="lg:col-span-4 w-full flex flex-col gap-4">
+            
+            <!-- Terminal Express Logs -->
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col h-64 md:h-72 shadow-xl">
+                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-500 inline-block"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span>
+                        <span class="text-xs font-code text-slate-400 ml-2">Console output</span>
+                    </div>
+                    <span class="text-[10px] font-code text-slate-500">Express Middleware</span>
+                </div>
+                
+                <div id="terminalLog" class="flex-1 overflow-y-auto font-code text-[11px] space-y-1 pr-1">
+                    <div class="text-slate-500">[INFO] Servidor rodando na porta 3000...</div>
+                    <div class="text-slate-500">[INFO] Event Loop pronto para aceitar conexões.</div>
+                </div>
+            </div>
+
+            <!-- Pedagogical Backend Concept Guide -->
+            <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-xs space-y-3">
+                <h3 class="font-orbitron font-bold text-slate-200 text-sm flex items-center gap-2">
+                    <span>🧠</span> CONCEITOS NODE.JS & EXPRESS
+                </h3>
+                
+                <div class="space-y-2 text-slate-300">
+                    <div class="p-2 rounded bg-slate-950/60 border-l-2 border-emerald-500">
+                        <span class="font-bold text-emerald-400 font-code block">res.json(data)</span>
+                        Serializa objetos JS em JSON. Usado em APIs RESTful (`GET /api/users`).
+                    </div>
+                    
+                    <div class="p-2 rounded bg-slate-950/60 border-l-2 border-cyan-500">
+                        <span class="font-bold text-cyan-400 font-code block">res.send(body)</span>
+                        Envia respostas genéricas (HTML, buffers, textos). Usado para arquivos estáticos.
+                    </div>
+
+                    <div class="p-2 rounded bg-slate-950/60 border-l-2 border-purple-500">
+                        <span class="font-bold text-purple-400 font-code block">express-rate-limit</span>
+                        Middleware de segurança que limita requisições repetidas para conter ataques DDoS (Retorna HTTP 429).
+                    </div>
+
+                    <div class="p-2 rounded bg-slate-950/60 border-l-2 border-amber-500">
+                        <span class="font-bold text-amber-400 font-code block">res.status(404)</span>
+                        Informa ao cliente que o endpoint ou recurso solicitado não existe no roteador.
+                    </div>
+                </div>
+            </div>
+
+        </aside>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="w-full max-w-7xl mx-auto mt-4 text-center text-xs text-slate-500 font-code py-2">
+        <p>Desenvolvido para Aprendizado de Node.js • Event Loop non-blocking I/O Architecture</p>
+    </footer>
+
+    <!-- JOGO JAVASCRIPT LOGIC -->
+    <script>
+        /**
+         * SINTETIZADOR DE ÁUDIO WEB AUDIO API
+         * Efeitos sonoros sem necessidade de arquivos externos de áudio.
+         */
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+            }
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+            playTone(freq, type, duration, vol = 0.1) {
+                if (!this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch (e) {}
+            }
+            playSuccess() {
+                this.playTone(587.33, 'sine', 0.15, 0.1); // D5
+                setTimeout(() => this.playTone(880, 'sine', 0.2, 0.1), 80); // A5
+            }
+            playError() {
+                this.playTone(150, 'sawtooth', 0.25, 0.15);
+                setTimeout(() => this.playTone(110, 'sawtooth', 0.3, 0.15), 100);
+            }
+            playDdosBlock() {
+                this.playTone(300, 'square', 0.1, 0.12);
+                setTimeout(() => this.playTone(450, 'square', 0.15, 0.12), 60);
+            }
+            playVictory() {
+                if (!this.ctx) return;
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, idx) => {
+                    setTimeout(() => this.playTone(freq, 'triangle', 0.2, 0.15), idx * 120);
+                });
+            }
+            playBossHit() {
+                this.playTone(800, 'square', 0.1, 0.2);
+                setTimeout(() => this.playTone(1200, 'sine', 0.15, 0.2), 50);
+            }
+        }
+
+        const sound = new SoundFX();
+
+        /**
+         * TIPOS DE REQUISIÇÃO (MAPPING PEDAGÓGICO)
+         */
+        const REQUEST_TYPES = {
+            JSON: {
+                id: 'json',
+                name: 'API Request',
+                correctAction: 'json',
+                color: '#22c55e',
+                bg: 'rgba(34, 197, 94, 0.15)',
+                border: '#22c55e',
+                paths: ['GET /api/v1/users', 'POST /api/auth/login', 'GET /api/products', 'GET /api/cart']
+            },
+            STATIC: {
+                id: 'send',
+                name: 'Static File',
+                correctAction: 'send',
+                color: '#06b6d4',
+                bg: 'rgba(6, 182, 212, 0.15)',
+                border: '#06b6d4',
+                paths: ['GET /index.html', 'GET /styles.css', 'GET /app.js', 'GET /favicon.ico']
+            },
+            DDOS: {
+                id: 'rate_limit',
+                name: 'DDoS Attack',
+                correctAction: 'rate_limit',
+                color: '#a855f7',
+                bg: 'rgba(168, 85, 247, 0.25)',
+                border: '#a855f7',
+                paths: ['FLOOD 0x888 BOTNET', 'ATTACK /SYN_FLOOD', 'DDOS IP:192.168.1.1', 'BOTNET /SPAM']
+            },
+            NOT_FOUND: {
+                id: 'not_found',
+                name: 'Unknown Route',
+                correctAction: 'not_found',
+                color: '#f59e0b',
+                bg: 'rgba(245, 158, 11, 0.15)',
+                border: '#f59e0b',
+                paths: ['GET /wp-admin', 'GET /phpmyadmin', 'GET /secret.env', 'GET /undefined']
+            }
+        };
+
+        /**
+         * GERENCIADOR E ENGINE DO JOGO
+         */
+        class GameEngine {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                
+                // Elementos UI DOM
+                this.scoreText = document.getElementById('scoreText');
+                this.highScoreText = document.getElementById('highScoreText');
+                this.cpuValueText = document.getElementById('cpuValueText');
+                this.cpuBar = document.getElementById('cpuBar');
+                this.rpsText = document.getElementById('rpsText');
+                this.terminalLog = document.getElementById('terminalLog');
+
+                this.startOverlay = document.getElementById('startOverlay');
+                this.gameOverOverlay = document.getElementById('gameOverOverlay');
+                this.victoryOverlay = document.getElementById('victoryOverlay');
+                this.policeBadge = document.getElementById('policeBadge');
+
+                // Estado do Boss
+                this.bossSpawned = false;
+                this.isBossActive = false;
+                this.boss = null;
+
+                // Botões de Ação
+                this.actionBtns = document.querySelectorAll('.action-btn');
+                this.selectedAction = 'json'; // default selected
+
+                // Modos do Jogo
+                this.isRunning = false;
+                this.score = 0;
+                this.highScore = localStorage.getItem('defensor_highscore') || 0;
+                this.cpuLoad = 0; // 0 a 100%
+                this.processedCount = 0;
+                this.ddosBlockedCount = 0;
+                this.errorCount = 0;
+                
+                // Entidades do Jogo
+                this.requests = [];
+                this.particles = [];
+                this.spawnTimer = 0;
+                this.spawnInterval = 90; // frames
+                this.lastTimestamp = 0;
+                this.processedThisSecond = 0;
+                this.rpsTimer = 0;
+
+                // Rotas/Lanes do Servidor
+                this.lanes = [0.22, 0.50, 0.78]; // X pos % no canvas
+
+                this.setupCanvasSize();
+                this.bindEvents();
+                this.updateUI();
+            }
+
+            setupCanvasSize() {
+                const rect = this.canvas.parentElement.getBoundingClientRect();
+                this.canvas.width = rect.width;
+                this.canvas.height = rect.height;
+            }
+
+            bindEvents() {
+                window.addEventListener('resize', () => this.setupCanvasSize());
+
+                // Iniciar e Reiniciar
+                document.getElementById('startBtn').addEventListener('click', () => this.start());
+                document.getElementById('restartBtn').addEventListener('click', () => this.start());
+                document.getElementById('victoryRestartBtn').addEventListener('click', () => this.start());
+
+                // Botões de Ação na Toolbar
+                this.actionBtns.forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const action = btn.getAttribute('data-action');
+                        this.setActiveAction(action);
+                    });
+                });
+
+                // Atalhos do Teclado (1, 2, 3, 4)
+                window.addEventListener('keydown', (e) => {
+                    if (!this.isRunning) return;
+                    if (e.key === '1') this.setActiveAction('json');
+                    if (e.key === '2') this.setActiveAction('send');
+                    if (e.key === '3') this.setActiveAction('rate_limit');
+                    if (e.key === '4') this.setActiveAction('not_found');
+                });
+
+                // Interação com o Canvas (Clique Direto na Requisição)
+                this.canvas.addEventListener('click', (e) => {
+                    if (!this.isRunning) return;
+                    const rect = this.canvas.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const clickY = e.clientY - rect.top;
+
+                    this.handleCanvasClick(clickX, clickY);
+                });
+            }
+
+            setActiveAction(action) {
+                this.selectedAction = action;
+                sound.init();
+
+                this.actionBtns.forEach(btn => {
+                    if (btn.getAttribute('data-action') === action) {
+                        btn.classList.add('ring-2', 'ring-cyan-400', 'bg-slate-800');
+                    } else {
+                        btn.classList.remove('ring-2', 'ring-cyan-400', 'bg-slate-800');
+                    }
+                });
+            }
+
+            start() {
+                sound.init();
+                this.isRunning = true;
+                this.score = 0;
+                this.cpuLoad = 0;
+                this.processedCount = 0;
+                this.ddosBlockedCount = 0;
+                this.errorCount = 0;
+                this.requests = [];
+                this.particles = [];
+                this.spawnInterval = 90;
+
+                this.bossSpawned = false;
+                this.isBossActive = false;
+                this.boss = null;
+                
+                this.startOverlay.classList.add('hidden');
+                this.gameOverOverlay.classList.add('hidden');
+                this.victoryOverlay.classList.add('hidden');
+                this.policeBadge.classList.add('hidden');
+                this.canvas.parentElement.classList.remove('police-alert');
+                
+                this.logTerminal('[DEPARTAMENTO DE POLÍCIA] Servidor sob monitoramento ciberpolicial.', 'text-blue-400');
+                this.setActiveAction('json');
+
+                this.lastTimestamp = performance.now();
+                requestAnimationFrame((ts) => this.gameLoop(ts));
+            }
+
+            spawnBoss() {
+                this.bossSpawned = true;
+                this.isBossActive = true;
+                this.canvas.parentElement.classList.add('police-alert');
+                this.policeBadge.classList.remove('hidden');
+
+                const bossWidth = Math.min(this.canvas.width * 0.75, 360);
+                const bossHeight = 110;
+
+                this.boss = {
+                    x: this.canvas.width / 2,
+                    y: -120,
+                    targetY: 80,
+                    width: bossWidth,
+                    height: bossHeight,
+                    requiredActions: ['json', 'send', 'rate_limit', 'not_found'],
+                    completedActions: [],
+                    pulse: 0
+                };
+
+                sound.playError();
+                this.logTerminal('🚨 [ALERTA MÁXIMO] CHEFÃO BOTNET DDOS DETECTADO NOS 1000 PONTOS!', 'text-red-500 font-bold');
+                this.logTerminal('💡 [CIBERPOLÍCIA] Clique no Boss aplicando as 4 defesas [1, 2, 3, 4] para derrotá-lo!', 'text-amber-400 font-bold');
+            }
+
+            victory() {
+                this.isRunning = false;
+                this.isBossActive = false;
+                sound.playVictory();
+
+                if (this.score > this.highScore) {
+                    this.highScore = this.score;
+                    localStorage.setItem('defensor_highscore', this.highScore);
+                }
+
+                document.getElementById('victoryScore').innerText = this.score;
+                document.getElementById('victoryProcessed').innerText = this.processedCount;
+
+                this.victoryOverlay.classList.remove('hidden');
+                this.policeBadge.classList.add('hidden');
+                this.canvas.parentElement.classList.remove('police-alert');
+
+                this.logTerminal('🎉 [CIBERPOLÍCIA] Chefão destruído! Caso encerrado e servidor salvo.', 'text-emerald-400 font-bold');
+            }
+
+            gameOver() {
+                this.isRunning = false;
+                sound.playError();
+                this.canvas.parentElement.classList.remove('police-alert');
+                
+                if (this.score > this.highScore) {
+                    this.highScore = this.score;
+                    localStorage.setItem('defensor_highscore', this.highScore);
+                }
+
+                document.getElementById('finalScore').innerText = this.score;
+                document.getElementById('finalProcessed').innerText = this.processedCount;
+                document.getElementById('finalDdos').innerText = this.ddosBlockedCount;
+                document.getElementById('finalErrors').innerText = this.errorCount;
+
+                this.gameOverOverlay.classList.remove('hidden');
+                this.logTerminal('[CRASH] CPU em 100%! Processo Node encerrou com erro 503.', 'text-red-500 font-bold');
+            }
+
+            handleCanvasClick(x, y) {
+                // Se o Boss estiver ativo, verificar se o clique acertou o Boss
+                if (this.isBossActive && this.boss) {
+                    const halfW = this.boss.width / 2;
+                    if (x >= this.boss.x - halfW && x <= this.boss.x + halfW &&
+                        y >= this.boss.y && y <= this.boss.y + this.boss.height) {
+                        
+                        this.processBossHit(this.selectedAction);
+                        return;
+                    }
+                }
+
+                // Verificar se o jogador clicou em um card normal
+                for (let i = this.requests.length - 1; i >= 0; i--) {
+                    const req = this.requests[i];
+                    const halfW = req.width / 2;
+                    
+                    if (x >= req.x - halfW && x <= req.x + halfW &&
+                        y >= req.y && y <= req.y + req.height) {
+                        
+                        this.processResponse(req, i, this.selectedAction);
+                        return;
+                    }
+                }
+            }
+
+            processBossHit(action) {
+                if (!this.boss) return;
+
+                if (!this.boss.completedActions.includes(action)) {
+                    this.boss.completedActions.push(action);
+                    sound.playBossHit();
+                    this.createParticles(this.boss.x, this.boss.y + this.boss.height / 2, '#38bdf8');
+                    
+                    const count = this.boss.completedActions.length;
+                    this.score += 50;
+                    this.logTerminal(`🛡️ [CIBERPOLÍCIA] Defesa ${action.toUpperCase()} aplicada no Boss! (${count}/4)`, 'text-cyan-400 font-bold');
+
+                    if (count >= 4) {
+                        // Boss destruído!
+                        this.createParticles(this.boss.x, this.boss.y + 50, '#22c55e');
+                        this.createParticles(this.boss.x - 50, this.boss.y + 50, '#ef4444');
+                        this.createParticles(this.boss.x + 50, this.boss.y + 50, '#a855f7');
+                        
+                        setTimeout(() => this.victory(), 500);
+                    }
+                } else {
+                    sound.playTone(200, 'sawtooth', 0.1, 0.1);
+                    this.logTerminal(`⚠️ [CIBERPOLÍCIA] A defesa [${action.toUpperCase()}] já foi usada no Boss! Selecione outro botão.`, 'text-amber-400');
+                }
+                this.updateUI();
+            }
+
+            spawnRequest() {
+                // Selecionar uma faixa (lane) aleatória
+                const laneIndex = Math.floor(Math.random() * this.lanes.length);
+                const laneX = this.canvas.width * this.lanes[laneIndex];
+
+                // Selecionar um tipo de requisição aleatório
+                const typeKeys = Object.keys(REQUEST_TYPES);
+                const randomKey = typeKeys[Math.floor(Math.random() * typeKeys.length)];
+                const type = REQUEST_TYPES[randomKey];
+
+                // Selecionar rota/path aleatório do tipo
+                const path = type.paths[Math.floor(Math.random() * type.paths.length)];
+
+                const cardWidth = Math.min(180, this.canvas.width * 0.28);
+                const cardHeight = 50;
+
+                // Velocidade progride levemente com a pontuação
+                const baseSpeed = 1.2 + Math.min(2.5, this.score / 300);
+
+                this.requests.push({
+                    x: laneX,
+                    y: -cardHeight,
+                    width: cardWidth,
+                    height: cardHeight,
+                    type: type,
+                    path: path,
+                    speed: baseSpeed
+                });
+            }
+
+            processResponse(req, index, action) {
+                if (action === req.type.correctAction) {
+                    // Resposta Correta do Middleware
+                    const points = (req.type.id === 'rate_limit') ? 25 : 15;
+                    this.score += points;
+                    this.processedCount++;
+                    this.processedThisSecond++;
+                    if (req.type.id === 'rate_limit') this.ddosBlockedCount++;
+
+                    // Alivia a carga da CPU
+                    this.cpuLoad = Math.max(0, this.cpuLoad - 3);
+
+                    if (req.type.id === 'rate_limit') {
+                        sound.playDdosBlock();
+                        this.logTerminal(`🛡️ [429] Ataque DDoS bloqueado com rateLimit() (+${points} pts)`, 'text-purple-400 font-bold');
+                    } else {
+                        sound.playSuccess();
+                        this.logTerminal(`200 OK: ${req.path} -> ${action}() (+${points} pts)`, 'text-emerald-400');
+                    }
+
+                    this.createParticles(req.x, req.y + req.height / 2, req.type.color);
+                } else {
+                    // Resposta Incorreta (Handler incorreto para a requisição)
+                    const penalty = 15;
+                    this.cpuLoad = Math.min(100, this.cpuLoad + penalty);
+                    this.errorCount++;
+
+                    sound.playError();
+                    this.logTerminal(`❌ [500 Error] Resposta errada [${action}] para ${req.path} (CPU +${penalty}%)`, 'text-red-400 font-bold');
+                    this.createParticles(req.x, req.y + req.height / 2, '#ef4444');
+
+                    if (this.cpuLoad >= 100) {
+                        this.requests.splice(index, 1);
+                        this.gameOver();
+                        return;
+                    }
+                }
+
+                this.requests.splice(index, 1);
+                this.updateUI();
+            }
+
+            update(delta) {
+                if (!this.isRunning) return;
+
+                // Checar convocação do Boss aos 1000 pontos
+                if (this.score >= 1000 && !this.bossSpawned) {
+                    this.spawnBoss();
+                }
+
+                // Animar posição do Boss se ativo
+                if (this.isBossActive && this.boss) {
+                    if (this.boss.y < this.boss.targetY) {
+                        this.boss.y += 2;
+                    }
+                    this.boss.pulse += 0.05;
+                }
+
+                // Spawner de requisições normais
+                this.spawnTimer++;
+                if (this.spawnTimer >= this.spawnInterval) {
+                    this.spawnRequest();
+                    this.spawnTimer = 0;
+                    this.spawnInterval = Math.max(30, 90 - Math.floor(this.score / 20));
+                }
+
+                // Atualizar RPS (Requests per Second)
+                this.rpsTimer += delta;
+                if (this.rpsTimer >= 1000) {
+                    this.rpsText.innerText = `${this.processedThisSecond} req/s`;
+                    this.processedThisSecond = 0;
+                    this.rpsTimer = 0;
+                }
+
+                // Atualizar Posição das Requisições
+                const serverY = this.canvas.height - 70; // Linha da porta 3000
+
+                for (let i = this.requests.length - 1; i >= 0; i--) {
+                    const req = this.requests[i];
+                    req.y += req.speed;
+
+                    // Chegou na porta 3000 sem ser processada!
+                    if (req.y + req.height >= serverY) {
+                        // Penalidade por não atender a requisição (Event Loop blocked)
+                        const penalty = (req.type.id === 'rate_limit') ? 25 : 12;
+                        this.cpuLoad = Math.min(100, this.cpuLoad + penalty);
+                        this.errorCount++;
+                        
+                        sound.playError();
+                        this.logTerminal(`[UNHANDLED] ${req.path} estourou a stack! CPU +${penalty}%`, 'text-red-400 font-bold');
+                        this.createParticles(req.x, serverY, '#dc2626');
+                        
+                        this.requests.splice(i, 1);
+
+                        if (this.cpuLoad >= 100) {
+                            this.gameOver();
+                            return;
+                        }
+                    }
+                }
+
+                // Atualizar Partículas
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const p = this.particles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.alpha -= 0.03;
+                    if (p.alpha <= 0) this.particles.splice(i, 1);
+                }
+
+                this.updateUI();
+            }
+
+            draw() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                // Background do Departamento de Ciberpolícia
+                this.drawPoliceDepartmentBackground();
+
+                // Desenhar Lanes (Servidores/Rotas)
+                this.lanes.forEach(lanePct => {
+                    const x = this.canvas.width * lanePct;
+                    this.ctx.strokeStyle = 'rgba(30, 41, 59, 0.5)';
+                    this.ctx.setLineDash([6, 6]);
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, 0);
+                    this.ctx.lineTo(x, this.canvas.height);
+                    this.ctx.stroke();
+                    this.ctx.setLineDash([]);
+                });
+
+                // Desenhar Chefão Botnet se estiver ativo
+                if (this.isBossActive && this.boss) {
+                    const b = this.boss;
+                    const halfW = b.width / 2;
+                    const glowPulse = Math.sin(b.pulse) * 6 + 12;
+
+                    // Glow do Boss
+                    this.ctx.shadowColor = '#ef4444';
+                    this.ctx.shadowBlur = glowPulse;
+
+                    // Container do Boss
+                    this.ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+                    this.ctx.strokeStyle = '#ef4444';
+                    this.ctx.lineWidth = 3;
+                    this.roundRect(b.x - halfW, b.y, b.width, b.height, 12, true, true);
+                    this.ctx.shadowBlur = 0;
+
+                    // Título do Boss
+                    this.ctx.fillStyle = '#ef4444';
+                    this.ctx.font = '800 12px "Orbitron", sans-serif';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('👾 CHEFÃO BOTNET DDOS (1000 PONTOS)', b.x, b.y + 22);
+
+                    // Instrução
+                    this.ctx.fillStyle = '#cbd5e1';
+                    this.ctx.font = '500 10px "Fira Code", monospace';
+                    this.ctx.fillText('Clique no Boss com as 4 defesas [1, 2, 3, 4]', b.x, b.y + 38);
+
+                    // Badges de Defesa (4 Elementos)
+                    const actions = [
+                        { id: 'json', label: '1: json' },
+                        { id: 'send', label: '2: send' },
+                        { id: 'rate_limit', label: '3: 429' },
+                        { id: 'not_found', label: '4: 404' }
+                    ];
+
+                    const badgeW = (b.width - 40) / 4;
+                    actions.forEach((act, idx) => {
+                        const isDone = b.completedActions.includes(act.id);
+                        const bx = (b.x - halfW + 20) + idx * badgeW;
+                        const by = b.y + 52;
+
+                        this.ctx.fillStyle = isDone ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.2)';
+                        this.ctx.strokeStyle = isDone ? '#22c55e' : '#ef4444';
+                        this.ctx.lineWidth = 1.5;
+                        this.roundRect(bx, by, badgeW - 6, 40, 6, true, true);
+
+                        this.ctx.fillStyle = isDone ? '#4ade80' : '#fca5a5';
+                        this.ctx.font = '700 10px "Fira Code", monospace';
+                        this.ctx.fillText(isDone ? '✓ OK' : act.label, bx + (badgeW - 6) / 2, by + 24);
+                    });
+
+                    this.ctx.textAlign = 'left';
+                }
+
+                // Desenhar Porta do Servidor / Event Loop Barrier (Base)
+                const serverY = this.canvas.height - 70;
+                
+                // Servidor Base Glow
+                const grad = this.ctx.createLinearGradient(0, serverY, 0, this.canvas.height);
+                grad.addColorStop(0, 'rgba(6, 182, 212, 0.1)');
+                grad.addColorStop(1, 'rgba(6, 182, 212, 0.3)');
+                this.ctx.fillStyle = grad;
+                this.ctx.fillRect(0, serverY, this.canvas.width, this.canvas.height - serverY);
+
+                // Linha de Limite
+                this.ctx.strokeStyle = '#06b6d4';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, serverY);
+                this.ctx.lineTo(this.canvas.width, serverY);
+                this.ctx.stroke();
+
+                // Texto da Porta
+                this.ctx.fillStyle = '#38bdf8';
+                this.ctx.font = '700 12px "Orbitron", sans-serif';
+                this.ctx.fillText('PORT 3000 • EXPRESS EVENT LOOP STACK', 20, serverY + 24);
+
+                // Desenhar Requisições (Cards)
+                this.requests.forEach(req => {
+                    const halfW = req.width / 2;
+                    
+                    // Fundo do Card
+                    this.ctx.fillStyle = req.type.bg;
+                    this.ctx.strokeStyle = req.type.border;
+                    this.ctx.lineWidth = 2;
+                    
+                    this.roundRect(
+                        req.x - halfW, req.y,
+                        req.width, req.height,
+                        8, true, true
+                    );
+
+                    // Badge do Tipo
+                    this.ctx.fillStyle = req.type.color;
+                    this.ctx.font = '700 10px "Fira Code", monospace';
+                    this.ctx.fillText(req.type.name.toUpperCase(), req.x - halfW + 10, req.y + 18);
+
+                    // Path / Endpoint
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = '600 11px "Fira Code", monospace';
+                    let pathText = req.path;
+                    if (pathText.length > 20) pathText = pathText.substring(0, 18) + '...';
+                    this.ctx.fillText(pathText, req.x - halfW + 10, req.y + 38);
+
+                    // Indicador Visual de Ação Necessária (Dica rápida)
+                    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                    this.ctx.font = '500 9px "Inter", sans-serif';
+                    let hint = '[1] res.json';
+                    if (req.type.correctAction === 'send') hint = '[2] res.send';
+                    if (req.type.correctAction === 'rate_limit') hint = '[3] 429 Block';
+                    if (req.type.correctAction === 'not_found') hint = '[4] 404 Status';
+                    this.ctx.fillText(hint, req.x + halfW - 65, req.y + 18);
+                });
+
+                // Desenhar Partículas
+                this.particles.forEach(p => {
+                    this.ctx.save();
+                    this.ctx.globalAlpha = p.alpha;
+                    this.ctx.fillStyle = p.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.restore();
+                });
+            }
+
+            roundRect(x, y, width, height, radius, fill, stroke) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(x + radius, y);
+                this.ctx.lineTo(x + width - radius, y);
+                this.ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+                this.ctx.lineTo(x + width, y + height - radius);
+                this.ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+                this.ctx.lineTo(x + radius, y + height);
+                this.ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+                this.ctx.lineTo(x, y + radius);
+                this.ctx.quadraticCurveTo(x, y, x + radius, y);
+                this.ctx.closePath();
+                if (fill) this.ctx.fill();
+                if (stroke) this.ctx.stroke();
+            }
+
+            createParticles(x, y, color) {
+                for (let i = 0; i < 14; i++) {
+                    this.particles.push({
+                        x: x,
+                        y: y,
+                        vx: (Math.random() - 0.5) * 6,
+                        vy: (Math.random() - 0.5) * 6,
+                        size: Math.random() * 4 + 2,
+                        color: color,
+                        alpha: 1.0
+                    });
+                }
+            }
+
+            drawPoliceDepartmentBackground() {
+                const w = this.canvas.width;
+                const h = this.canvas.height;
+
+                this.ctx.save();
+
+                // 1. Parede e iluminação do Centro de Comando do Departamento
+                const wallGrad = this.ctx.createLinearGradient(0, 0, 0, h);
+                wallGrad.addColorStop(0, '#060a17');
+                wallGrad.addColorStop(0.6, '#0b1329');
+                wallGrad.addColorStop(1, '#050814');
+                this.ctx.fillStyle = wallGrad;
+                this.ctx.fillRect(0, 0, w, h);
+
+                // 2. Luzes de Sirene da Polícia Tática (Animação de pulso e giro)
+                const time = Date.now() * 0.003;
+                const redGlow = Math.sin(time) * 0.12 + 0.12;
+                const blueGlow = Math.cos(time) * 0.12 + 0.12;
+
+                const leftSiren = this.ctx.createRadialGradient(0, 0, 10, 0, 0, w * 0.45);
+                leftSiren.addColorStop(0, `rgba(239, 68, 68, ${redGlow})`);
+                leftSiren.addColorStop(1, 'rgba(239, 68, 68, 0)');
+                this.ctx.fillStyle = leftSiren;
+                this.ctx.fillRect(0, 0, w, h);
+
+                const rightSiren = this.ctx.createRadialGradient(w, 0, 10, w, 0, w * 0.45);
+                rightSiren.addColorStop(0, `rgba(59, 130, 246, ${blueGlow})`);
+                rightSiren.addColorStop(1, 'rgba(59, 130, 246, 0)');
+                this.ctx.fillStyle = rightSiren;
+                this.ctx.fillRect(0, 0, w, h);
+
+                // 3. Grid ciberespacial do centro de comando
+                this.ctx.strokeStyle = 'rgba(30, 58, 138, 0.18)';
+                this.ctx.lineWidth = 1;
+                for (let x = 0; x < w; x += 35) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, 0);
+                    this.ctx.lineTo(x, h);
+                    this.ctx.stroke();
+                }
+                for (let y = 0; y < h; y += 35) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, y);
+                    this.ctx.lineTo(w, y);
+                    this.ctx.stroke();
+                }
+
+                // 4. Brasão da Ciberpolícia (Escudo + Estrela no centro)
+                const cx = w / 2;
+                const cy = h * 0.38;
+                this.ctx.save();
+                this.ctx.translate(cx, cy);
+                this.ctx.globalAlpha = 0.09;
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, -85);
+                this.ctx.lineTo(70, -55);
+                this.ctx.lineTo(60, 30);
+                this.ctx.lineTo(0, 85);
+                this.ctx.lineTo(-60, 30);
+                this.ctx.lineTo(-70, -55);
+                this.ctx.closePath();
+                this.ctx.fillStyle = '#38bdf8';
+                this.ctx.fill();
+                this.ctx.strokeStyle = '#60a5fa';
+                this.ctx.lineWidth = 4;
+                this.ctx.stroke();
+
+                this.ctx.beginPath();
+                for (let i = 0; i < 5; i++) {
+                    const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+                    const r = 32;
+                    const x = r * Math.cos(angle);
+                    const y = r * Math.sin(angle);
+                    if (i === 0) this.ctx.moveTo(x, y);
+                    else this.ctx.lineTo(x, y);
+                }
+                this.ctx.closePath();
+                this.ctx.fillStyle = '#f59e0b';
+                this.ctx.fill();
+
+                this.ctx.restore();
+
+                // 5. Letreiro do Departamento de Polícia
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.08;
+                this.ctx.fillStyle = '#38bdf8';
+                this.ctx.font = '900 65px "Orbitron", sans-serif';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('POLICE HQ', cx, h * 0.22);
+                this.ctx.font = '700 20px "Orbitron", sans-serif';
+                this.ctx.fillText('DEPARTAMENTO DE CIBERPOLÍCIA • DICC', cx, h * 0.28);
+                this.ctx.restore();
+
+                // 6. Monitores de vigilância laterais (CAM-01 e CAM-02)
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.25;
+                this.ctx.strokeStyle = '#3b82f6';
+                this.ctx.lineWidth = 1.5;
+
+                // Monitor Esquerdo
+                this.roundRect(15, 15, w * 0.22, h * 0.18, 6, false, true);
+                this.ctx.fillStyle = '#38bdf8';
+                this.ctx.font = '700 9px "Fira Code", monospace';
+                this.ctx.fillText('CAM-01: SERVER ROOM', 22, 32);
+                this.ctx.fillText('STATUS: MONITORING', 22, 45);
+
+                // Monitor Direito
+                this.roundRect(w - w * 0.22 - 15, 15, w * 0.22, h * 0.18, 6, false, true);
+                this.ctx.fillText('CAM-02: GATEKEEPER', w - w * 0.22 - 8, 32);
+                this.ctx.fillText('PORT: 3000 [ACTIVE]', w - w * 0.22 - 8, 45);
+
+                this.ctx.restore();
+
+                this.ctx.restore();
+            }
+
+            updateUI() {
+                this.scoreText.innerText = this.score;
+                this.highScoreText.innerText = this.highScore;
+                this.cpuValueText.innerText = `${Math.round(this.cpuLoad)}%`;
+                this.cpuBar.style.width = `${this.cpuLoad}%`;
+
+                if (this.cpuLoad > 70) {
+                    this.cpuBar.className = "bg-red-500 h-full transition-all duration-300";
+                    this.cpuValueText.className = "text-red-400 font-bold animate-pulse";
+                } else if (this.cpuLoad > 40) {
+                    this.cpuBar.className = "bg-amber-500 h-full transition-all duration-300";
+                    this.cpuValueText.className = "text-amber-400 font-bold";
+                } else {
+                    this.cpuBar.className = "bg-emerald-500 h-full transition-all duration-300";
+                    this.cpuValueText.className = "text-emerald-400 font-bold";
+                }
+            }
+
+            logTerminal(msg, colorClass = 'text-slate-300') {
+                const line = document.createElement('div');
+                line.className = `${colorClass} truncate`;
+                const time = new Date().toLocaleTimeString('pt-BR', { hour12: false });
+                line.innerText = `[${time}] ${msg}`;
+                
+                this.terminalLog.appendChild(line);
+                this.terminalLog.scrollTop = this.terminalLog.scrollHeight;
+
+                // Limitar histórico de logs
+                while (this.terminalLog.children.length > 35) {
+                    this.terminalLog.removeChild(this.terminalLog.firstChild);
+                }
+            }
+
+            gameLoop(timestamp) {
+                const delta = timestamp - this.lastTimestamp;
+                this.lastTimestamp = timestamp;
+
+                this.update(delta);
+                this.draw();
+
+                if (this.isRunning) {
+                    requestAnimationFrame((ts) => this.gameLoop(ts));
+                }
+            }
+        }
+
+        // Inicializar após carregamento da janela
+        window.onload = () => {
+            window.game = new GameEngine();
+        };
+    </script>
+</body>
+</html>
